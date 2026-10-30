@@ -30,7 +30,7 @@ def get_coordinates(place: str):
     }
 
 
-def get_weather_forecast(place: str, days: int = 7):
+def get_weather_forecast(place: str, days: int = 5):
     """Get a daily weather forecast for a place."""
     loc = get_coordinates(place)
     if loc is None:
@@ -68,11 +68,10 @@ def get_weather_forecast(place: str, days: int = 7):
 # MANDI PRICE TOOL
 # ---------------------------------------------------------------------------
 def _fetch_mandi_records():
-    """Fetch recent mandi records in small pages (the server is slow for big requests).
-    Returns (records, error). On success, also saves a local cache."""
+    """Fetch recent mandi records in small pages. Saves a local cache on success."""
     api_key = os.getenv("DATA_GOV_API_KEY")
     if not api_key:
-        return None, "DATA_GOV_API_KEY not found in .env"
+        return None, "DATA_GOV_API_KEY not found"
 
     resource_id = "9ef84268-d588-465a-a308-a864a43d0070"
     url = f"https://api.data.gov.in/resource/{resource_id}"
@@ -80,7 +79,7 @@ def _fetch_mandi_records():
 
     all_records = []
     last_error = None
-    for page in range(2):  # 5 pages x 200 = up to 1000 records
+    for page in range(2):
         params = {
             "api-key": api_key,
             "format": "json",
@@ -96,7 +95,7 @@ def _fetch_mandi_records():
             all_records.extend(batch)
         except requests.exceptions.RequestException as e:
             last_error = str(e)
-            break  # keep whatever we already got
+            break
 
     if all_records:
         try:
@@ -116,8 +115,22 @@ def _load_cached_records():
         return None
 
 
-def get_mandi_prices(commodity: str, state: str = "", limit: int = 10):
-    """Get recent mandi (market) prices for a crop. Prices are in INR per quintal."""
+def _format_prices(recs):
+    return [{
+        "market": r.get("market"),
+        "district": r.get("district"),
+        "state": r.get("state"),
+        "commodity": r.get("commodity"),
+        "date": r.get("arrival_date"),
+        "min_price": r.get("min_price"),
+        "max_price": r.get("max_price"),
+        "modal_price": r.get("modal_price"),
+    } for r in recs]
+
+
+def get_mandi_prices(commodity: str, state: str = "", limit: int = 5):
+    """Get recent mandi prices (INR per quintal). If the state has no data,
+    falls back to the same crop in other states and says so."""
     records, error = _fetch_mandi_records()
     source = "live data.gov.in"
 
@@ -127,41 +140,39 @@ def get_mandi_prices(commodity: str, state: str = "", limit: int = 10):
         if records is None:
             return {"error": f"Mandi price service is not responding: {error}"}
 
-    matches = [
-        rec for rec in records
-        if commodity.lower() in (rec.get("commodity") or "").lower()
-        and (not state or state.lower() in (rec.get("state") or "").lower())
-    ][:limit]
+    crop_matches = [
+        r for r in records
+        if commodity.lower() in (r.get("commodity") or "").lower()
+    ]
+    if not crop_matches:
+        return {"error": f"No recent price records found for {commodity} ({source})."}
 
-    if not matches:
+    in_state = [
+        r for r in crop_matches
+        if state and state.lower() in (r.get("state") or "").lower()
+    ]
+
+    if in_state:
         return {
-            "error": f"No price data found for {commodity} in {state or 'India'} "
-                     f"in the latest records ({source})."
+            "commodity": commodity,
+            "source": source,
+            "note": f"Prices from markets in {state}.",
+            "prices_per_quintal_inr": _format_prices(in_state[:limit]),
         }
 
-    prices = []
-    for rec in matches:
-        prices.append({
-            "market": rec.get("market"),
-            "district": rec.get("district"),
-            "state": rec.get("state"),
-            "commodity": rec.get("commodity"),
-            "date": rec.get("arrival_date"),
-            "min_price": rec.get("min_price"),
-            "max_price": rec.get("max_price"),
-            "modal_price": rec.get("modal_price"),
-        })
     return {
         "commodity": commodity,
         "source": source,
-        "prices_per_quintal_inr": prices,
+        "note": (
+            f"No recent price records for {commodity} in {state or 'the requested state'}. "
+            "Showing the same crop from other states instead, so tell the farmer these "
+            "are not local prices."
+        ),
+        "prices_per_quintal_inr": _format_prices(crop_matches[:limit]),
     }
 
 
-# ---------------------------------------------------------------------------
-# QUICK TEST
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print(get_weather_forecast("Rourkela", days=3))
     print()
-    print(get_mandi_prices("Potato", "", limit=5))
+    print(get_mandi_prices("Potato", "Odisha", limit=5))
