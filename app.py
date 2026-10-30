@@ -11,7 +11,7 @@ except Exception:
     pass
 
 from agent import run_agent  # noqa: E402  (must come after the keys are set)
-
+from locations import LOCATIONS, CROPS, OTHER
 st.set_page_config(page_title="Farmer Advisory Assistant", page_icon="🌾", layout="centered")
 
 st.title("🌾 Farmer Advisory Assistant")
@@ -24,9 +24,23 @@ st.caption(
 with st.sidebar:
     st.header("Your details")
     language = st.selectbox("Language", ["English", "Hindi", "Odia"])
-    location = st.text_input("Village / town", value="Rourkela")
-    state = st.text_input("State", value="Odisha")
-    crop = st.text_input("Crop", value="Potato")
+
+    state = st.selectbox("State", sorted(LOCATIONS.keys()),
+                         index=sorted(LOCATIONS.keys()).index("Odisha"))
+
+    town_options = LOCATIONS[state] + [OTHER]
+    town_choice = st.selectbox("Village / town", town_options)
+    if town_choice == OTHER:
+        location = st.text_input("Type your village / town")
+    else:
+        location = town_choice
+
+    crop_choice = st.selectbox("Crop", CROPS + [OTHER])
+    if crop_choice == OTHER:
+        crop = st.text_input("Type your crop")
+    else:
+        crop = crop_choice
+
     st.divider()
     st.markdown("**Try asking:**")
     st.markdown("- Should I irrigate this week?\n- Should I sell now or wait?\n- Is it safe to harvest?")
