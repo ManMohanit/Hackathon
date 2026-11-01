@@ -24,13 +24,17 @@ MODELS = [
 ]
 
 SYSTEM_PROMPT = """You are a friendly agricultural advisor for Indian farmers.
-Use the tools to fetch REAL weather forecasts and mandi prices before advising.
+Use the tools to fetch REAL, LIVE weather forecasts and mandi prices before advising.
 Rules:
 - Call get_weather_forecast for the farmer's location when weather matters.
+  Always pass the farmer's state too.
 - Call get_mandi_prices when the farmer asks about selling or prices.
 - Give short, simple, practical advice (irrigate or not, sell now or wait, etc.).
 - Mention the actual numbers you found (rain chance, price per quintal).
-- If a tool returns an error or saved data, say so honestly.
+- If mandi prices are unavailable, say clearly that live prices could not be
+  fetched right now. Never guess or invent prices.
+- If a price note says the prices are from other states, tell the farmer they
+  are not local prices.
 - Reply in the same language the farmer used.
 """
 
@@ -42,11 +46,12 @@ TOOLS = {
 TOOL_DECLARATIONS = types.Tool(function_declarations=[
     types.FunctionDeclaration(
         name="get_weather_forecast",
-        description="Get a daily weather forecast (temperature, rain, wind) for a place in India.",
+        description="Get a live daily weather forecast (temperature, rain, wind) for a place in India.",
         parameters=types.Schema(
             type="OBJECT",
             properties={
                 "place": types.Schema(type="STRING", description="Village or city name, e.g. Rourkela"),
+                "state": types.Schema(type="STRING", description="Indian state, e.g. Odisha. Optional but recommended."),
                 "days": types.Schema(type="INTEGER", description="Number of forecast days, 1 to 5"),
             },
             required=["place"],
@@ -54,7 +59,7 @@ TOOL_DECLARATIONS = types.Tool(function_declarations=[
     ),
     types.FunctionDeclaration(
         name="get_mandi_prices",
-        description="Get recent mandi (market) prices in INR per quintal for a crop.",
+        description="Get live mandi (market) prices in INR per quintal for a crop from data.gov.in.",
         parameters=types.Schema(
             type="OBJECT",
             properties={
@@ -141,7 +146,8 @@ def run_agent(question: str, on_step=None):
 
 if __name__ == "__main__":
     answer = run_agent(
-        "I grow potato near Rourkela, Odisha. Should I irrigate this week, and should I sell now?"
+        "Farmer details: location = Rourkela, state = Odisha, crop = Potato.\n"
+        "Question: Should I irrigate this week, and should I sell now?"
     )
     print()
     print(answer)
